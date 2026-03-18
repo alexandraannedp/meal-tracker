@@ -2425,8 +2425,9 @@
 
     renderCalendar();
 
-    // --- Food Search (Open Food Facts) ---
-    const OFF_URL = 'https://world.openfoodfacts.org/cgi/search.pl';
+    // --- Food Search (USDA FoodData Central) ---
+    const USDA_API_KEY = 'DEMO_KEY';
+    const USDA_URL = 'https://api.nal.usda.gov/fdc/v1/foods/search';
 
     document.getElementById('food-search').addEventListener('input', (e) => {
       const query = e.target.value.trim();
@@ -2445,46 +2446,51 @@
     async function searchFood(query) {
       try {
         const params = new URLSearchParams({
-          search_terms: query,
-          search_simple: 1,
-          action: 'process',
-          json: 1,
-          page_size: 15,
-          fields: 'product_name,nutriments,serving_size'
+          api_key: USDA_API_KEY,
+          query: query,
+          pageSize: 20,
+          dataType: 'Foundation,SR Legacy,Survey (FNDDS),Branded'
         });
-        const res = await fetch(OFF_URL + '?' + params);
+        const res = await fetch(USDA_URL + '?' + params);
         const data = await res.json();
 
-        if (!data.products || data.products.length === 0) {
+        if (!data.foods || data.foods.length === 0) {
           document.getElementById('search-results').innerHTML =
             '<div class="search-hint">No results found. Try a different term.</div>';
           return;
         }
 
-        const validProducts = data.products.filter(p =>
-          p.product_name && p.nutriments && p.nutriments['energy-kcal_100g'] != null
-        );
+        const validFoods = data.foods.filter(f => {
+          const nutrients = f.foodNutrients || [];
+          const hasCal = nutrients.some(n => n.nutrientId === 1008 || n.nutrientName === 'Energy');
+          return f.description && hasCal;
+        });
 
-        if (validProducts.length === 0) {
+        if (validFoods.length === 0) {
           document.getElementById('search-results').innerHTML =
             '<div class="search-hint">No results with nutrition data. Try a different term.</div>';
           return;
         }
 
-        const resultsHTML = validProducts.map(food => {
+        const resultsHTML = validFoods.map(food => {
           const nutrients = extractNutrients(food);
+          const servSize = food.servingSize || 100;
+          const servUnit = food.servingSizeUnit || 'g';
+          const brandLabel = food.brandName ? ` <span style="color:var(--gray);font-size:11px;">(${food.brandName})</span>` : '';
+          const dataTypeLabel = (food.dataType === 'SR Legacy' || food.dataType === 'Foundation' || food.dataType === 'Survey (FNDDS)')
+            ? ' <span style="color:var(--sage);font-size:10px;font-weight:600;">USDA</span>' : '';
           return `<div class="search-result" data-food='${JSON.stringify({
-            name: food.product_name,
+            name: food.description,
             cal: nutrients.cal,
             protein: nutrients.protein,
             carbs: nutrients.carbs,
             fat: nutrients.fat,
-            servingSize: 100,
-            servingUnit: 'g'
+            servingSize: servSize,
+            servingUnit: servUnit
           }).replace(/'/g, "&#39;")}'>
-            <div class="food-name">${food.product_name}</div>
+            <div class="food-name">${food.description}${brandLabel}${dataTypeLabel}</div>
             <div class="food-macros">
-              ${nutrients.cal} cal | ${nutrients.protein}g P | ${nutrients.carbs}g C | ${nutrients.fat}g F (per 100g)
+              ${nutrients.cal} cal | ${nutrients.protein}g P | ${nutrients.carbs}g C | ${nutrients.fat}g F (per ${servSize}${servUnit})
             </div>
           </div>`;
         }).join('');
@@ -2504,12 +2510,16 @@
     }
 
     function extractNutrients(food) {
-      const n = food.nutriments || {};
+      const nutrients = food.foodNutrients || [];
+      const get = (id) => {
+        const match = nutrients.find(n => n.nutrientId === id);
+        return match ? Math.round(match.value || 0) : 0;
+      };
       return {
-        cal: Math.round(n['energy-kcal_100g'] || 0),
-        protein: Math.round(n['proteins_100g'] || 0),
-        carbs: Math.round(n['carbohydrates_100g'] || 0),
-        fat: Math.round(n['fat_100g'] || 0)
+        cal: get(1008),
+        protein: get(1003),
+        carbs: get(1005),
+        fat: get(1004)
       };
     }
 
