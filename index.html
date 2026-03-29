@@ -499,6 +499,81 @@
       max-height: 300px;
       overflow-y: auto;
     }
+    .search-result .food-brand {
+      font-size: 11px;
+      color: var(--gray);
+      font-weight: 500;
+    }
+    .search-result .food-source {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      margin-left: 6px;
+    }
+    .source-cn { background: #E8F5E9; color: var(--sage); }
+    .source-off { background: #E3F2FD; color: #2B5EA7; }
+    .source-usda { background: #FFF8E1; color: #C4A265; }
+
+    /* Recent Foods */
+    .recent-section {
+      margin-bottom: 10px;
+    }
+    .recent-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--gray);
+      margin-bottom: 8px;
+    }
+    .recent-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .recent-chip {
+      background: var(--cream);
+      border: 1px solid var(--net-line);
+      border-radius: 20px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: 'Montserrat', sans-serif;
+      color: var(--dark);
+    }
+    .recent-chip:hover {
+      background: var(--court-green);
+      border-color: var(--court-green);
+    }
+    .recent-chip .chip-cal {
+      font-size: 10px;
+      color: var(--gray);
+      font-weight: 500;
+      margin-left: 4px;
+    }
+
+    /* API setup banner */
+    .api-setup-banner {
+      background: #FFF8E1;
+      border: 1px solid #F0E0A0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #8B7000;
+      line-height: 1.5;
+    }
+    .api-setup-banner a {
+      color: #2B5EA7;
+      font-weight: 700;
+    }
     .search-result {
       padding: 12px;
       border-bottom: 1px solid var(--net-line);
@@ -1650,7 +1725,18 @@
           </div>
         </div>
 
-        <input type="text" class="search-input" id="food-search" placeholder="Search for a food..." autocomplete="off">
+        <!-- API setup banner (hidden once keys are set) -->
+        <div class="api-setup-banner" id="api-setup-banner" style="display:none">
+          For better food search, add your free CalorieNinjas API key in Settings below. <a href="https://calorieninjas.com/api" target="_blank">Get free key here</a> (10,000 req/month). Open Food Facts search works without any key!
+        </div>
+
+        <!-- Recent Foods -->
+        <div class="recent-section" id="recent-section" style="display:none">
+          <div class="recent-label">Recent</div>
+          <div class="recent-chips" id="recent-chips"></div>
+        </div>
+
+        <input type="text" class="search-input" id="food-search" placeholder="Search for a food (e.g. '2 eggs and toast')..." autocomplete="off">
         <div class="search-results" id="search-results">
           <div class="search-hint">Type a food name to search</div>
         </div>
@@ -1739,6 +1825,21 @@
       </div>
       <button class="btn btn-primary" style="width:100%" id="save-settings">Save Targets</button>
       <div class="save-msg" id="save-msg">Saved! Game on.</div>
+    </div>
+
+    <!-- CalorieNinjas API -->
+    <div class="settings-form">
+      <h2>Food Database (CalorieNinjas)</h2>
+      <p style="font-size:12px;color:var(--gray);margin-bottom:14px;line-height:1.5;font-weight:500;">
+        Get natural language food search (e.g. "1 cup rice" or "2 eggs and toast").
+        Sign up free at <a href="https://calorieninjas.com/api" target="_blank" style="color:#2B5EA7;font-weight:700;">calorieninjas.com/api</a> (10,000 requests/month free). Open Food Facts branded food search always works without a key. USDA is used as final fallback.
+      </p>
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="text" id="cn-api-key" placeholder="e.g. abc123DEF456...">
+      </div>
+      <button class="btn btn-primary" style="width:100%" id="save-api-keys">Save API Key</button>
+      <div class="save-msg" id="save-api-msg">API key saved!</div>
     </div>
 
     <!-- Export Data -->
@@ -1901,6 +2002,7 @@
       renderTodayLog();
       renderSuggestions();
       renderFavorites();
+      renderRecent();
       updateWaterDisplay();
       renderCalendar();
       loadSettings();
@@ -1919,7 +2021,8 @@
         days: {},
         water: {},
         weight: {},
-        favorites: []
+        favorites: [],
+        recentFoods: []
       };
     }
 
@@ -1932,6 +2035,7 @@
       if (!parsed.water) parsed.water = {};
       if (!parsed.weight) parsed.weight = {};
       if (!parsed.favorites) parsed.favorites = [];
+      if (!parsed.recentFoods) parsed.recentFoods = [];
       return parsed;
     }
 
@@ -2425,88 +2529,203 @@
 
     renderCalendar();
 
-    // --- Food Search (USDA FoodData Central) ---
+    // --- Food Search (CalorieNinjas + Open Food Facts + USDA fallback) ---
     const USDA_API_KEY = 'DEMO_KEY';
     const USDA_URL = 'https://api.nal.usda.gov/fdc/v1/foods/search';
+    const CN_URL = 'https://api.calorieninjas.com/v1/nutrition';
+    const OFF_SEARCH_URL = 'https://world.openfoodfacts.org/cgi/search.pl';
+    const API_KEYS_STORAGE = 'mealTrackerApiKeys';
+
+    function getCNKey() {
+      try {
+        const raw = localStorage.getItem(API_KEYS_STORAGE);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return parsed.cnKey || '';
+        }
+      } catch(e) {}
+      return '';
+    }
+
+    function hasCNKey() {
+      return !!getCNKey();
+    }
+
+    // Show/hide API setup banner
+    function updateApiBanner() {
+      const banner = document.getElementById('api-setup-banner');
+      banner.style.display = hasCNKey() ? 'none' : 'block';
+    }
 
     document.getElementById('food-search').addEventListener('input', (e) => {
       const query = e.target.value.trim();
       clearTimeout(searchTimeout);
       if (query.length < 2) {
         document.getElementById('search-results').innerHTML =
-          '<div class="search-hint">Type a food name to search</div>';
+          '<div class="search-hint">Type a food name to search (e.g. "chicken breast" or "2 eggs and toast")</div>';
         return;
       }
       document.getElementById('search-results').innerHTML =
         '<div class="search-loading">Searching...</div>';
 
-      searchTimeout = setTimeout(() => searchFood(query), 400);
+      searchTimeout = setTimeout(() => searchFood(query), 300);
     });
 
     async function searchFood(query) {
-      try {
-        const params = new URLSearchParams({
-          api_key: USDA_API_KEY,
-          query: query,
-          pageSize: 20,
-          dataType: 'Foundation,SR Legacy,Survey (FNDDS),Branded'
-        });
-        const res = await fetch(USDA_URL + '?' + params);
-        const data = await res.json();
-
-        if (!data.foods || data.foods.length === 0) {
-          document.getElementById('search-results').innerHTML =
-            '<div class="search-hint">No results found. Try a different term.</div>';
-          return;
-        }
-
-        const validFoods = data.foods.filter(f => {
-          const nutrients = f.foodNutrients || [];
-          const hasCal = nutrients.some(n => n.nutrientId === 1008 || n.nutrientName === 'Energy');
-          return f.description && hasCal;
-        });
-
-        if (validFoods.length === 0) {
-          document.getElementById('search-results').innerHTML =
-            '<div class="search-hint">No results with nutrition data. Try a different term.</div>';
-          return;
-        }
-
-        const resultsHTML = validFoods.map(food => {
-          const nutrients = extractNutrients(food);
-          const servSize = food.servingSize || 100;
-          const servUnit = food.servingSizeUnit || 'g';
-          const brandLabel = food.brandName ? ` <span style="color:var(--gray);font-size:11px;">(${food.brandName})</span>` : '';
-          const dataTypeLabel = (food.dataType === 'SR Legacy' || food.dataType === 'Foundation' || food.dataType === 'Survey (FNDDS)')
-            ? ' <span style="color:var(--sage);font-size:10px;font-weight:600;">USDA</span>' : '';
-          return `<div class="search-result" data-food='${JSON.stringify({
-            name: food.description,
-            cal: nutrients.cal,
-            protein: nutrients.protein,
-            carbs: nutrients.carbs,
-            fat: nutrients.fat,
-            servingSize: servSize,
-            servingUnit: servUnit
-          }).replace(/'/g, "&#39;")}'>
-            <div class="food-name">${food.description}${brandLabel}${dataTypeLabel}</div>
-            <div class="food-macros">
-              ${nutrients.cal} cal | ${nutrients.protein}g P | ${nutrients.carbs}g C | ${nutrients.fat}g F (per ${servSize}${servUnit})
-            </div>
-          </div>`;
-        }).join('');
-
-        document.getElementById('search-results').innerHTML = resultsHTML;
-
-        document.querySelectorAll('.search-result').forEach(el => {
-          el.addEventListener('click', () => {
-            selectedFood = JSON.parse(el.dataset.food);
-            openServingModal();
-          });
-        });
-      } catch(err) {
-        document.getElementById('search-results').innerHTML =
-          '<div class="search-hint">Search failed. Check your internet connection.</div>';
+      // Search Open Food Facts (always free) + CalorieNinjas (if key set) in parallel
+      const promises = [searchOpenFoodFacts(query)];
+      if (hasCNKey()) {
+        promises.push(searchCalorieNinjas(query));
       }
+
+      const results = await Promise.allSettled(promises);
+      const offFoods = results[0].status === 'fulfilled' ? results[0].value : [];
+      const cnFoods = results.length > 1 && results[1].status === 'fulfilled' ? results[1].value : [];
+
+      let allFoods = [...cnFoods, ...offFoods];
+
+      // If nothing found, fall back to USDA
+      if (allFoods.length === 0) {
+        try {
+          allFoods = await searchUSDA(query);
+        } catch(e) {}
+      }
+
+      if (allFoods.length === 0) {
+        document.getElementById('search-results').innerHTML =
+          '<div class="search-hint">No results found. Try a different term.</div>';
+        return;
+      }
+
+      renderSearchResults(allFoods);
+    }
+
+    function renderSearchResults(foods) {
+      let html = '';
+      foods.forEach(food => {
+        const thumbStyle = food.thumb
+          ? `background-image:url('${food.thumb}');background-size:cover;width:36px;height:36px;border-radius:8px;flex-shrink:0;`
+          : '';
+        const sourceClass = food.source === 'cn' ? 'source-cn' : food.source === 'off' ? 'source-off' : 'source-usda';
+        const sourceLabel = food.source === 'cn' ? 'CalorieNinjas' : food.source === 'off' ? 'Open Food Facts' : 'USDA';
+        const brandHtml = food.brand ? `<div class="food-brand">${food.brand}</div>` : '';
+        const foodData = JSON.stringify({
+          name: food.name + (food.brand ? ' (' + food.brand + ')' : ''),
+          cal: food.cal,
+          protein: food.protein,
+          carbs: food.carbs,
+          fat: food.fat,
+          servingSize: food.servingSize,
+          servingUnit: food.servingUnit
+        }).replace(/'/g, "&#39;");
+
+        html += `<div class="search-result" data-food='${foodData}'>
+          <div style="display:flex;align-items:center;gap:10px;">
+            ${thumbStyle ? `<div style="${thumbStyle}"></div>` : ''}
+            <div>
+              <div class="food-name">${food.name}<span class="food-source ${sourceClass}">${sourceLabel}</span></div>
+              ${brandHtml}
+              <div class="food-macros">
+                ${food.cal} cal | ${food.protein}g P | ${food.carbs}g C | ${food.fat}g F (per ${food.servingSize}${food.servingUnit})
+              </div>
+            </div>
+          </div>
+        </div>`;
+      });
+
+      document.getElementById('search-results').innerHTML = html;
+
+      document.querySelectorAll('.search-result[data-food]').forEach(el => {
+        el.addEventListener('click', () => {
+          selectedFood = JSON.parse(el.dataset.food);
+          openServingModal();
+        });
+      });
+    }
+
+    // --- CalorieNinjas search ---
+    async function searchCalorieNinjas(query) {
+      const res = await fetch(CN_URL + '?query=' + encodeURIComponent(query), {
+        headers: { 'X-Api-Key': getCNKey() }
+      });
+      const data = await res.json();
+      return (data.items || []).map(item => ({
+        name: item.name.charAt(0).toUpperCase() + item.name.slice(1),
+        cal: Math.round(item.calories || 0),
+        protein: Math.round(item.protein_g || 0),
+        carbs: Math.round(item.carbohydrates_total_g || 0),
+        fat: Math.round(item.fat_total_g || 0),
+        servingSize: Math.round(item.serving_size_g || 100),
+        servingUnit: 'g',
+        source: 'cn',
+        brand: null,
+        thumb: null
+      }));
+    }
+
+    // --- Open Food Facts search ---
+    async function searchOpenFoodFacts(query) {
+      const params = new URLSearchParams({
+        search_terms: query,
+        search_simple: 1,
+        action: 'process',
+        json: 1,
+        page_size: 15,
+        fields: 'product_name,brands,nutriments,image_small_url'
+      });
+      const res = await fetch(OFF_SEARCH_URL + '?' + params);
+      const data = await res.json();
+      return (data.products || [])
+        .filter(p => p.product_name && p.nutriments && p.nutriments['energy-kcal_100g'] != null)
+        .slice(0, 12)
+        .map(p => {
+          const n = p.nutriments;
+          return {
+            name: p.product_name,
+            cal: Math.round(n['energy-kcal_100g'] || 0),
+            protein: Math.round(n['proteins_100g'] || 0),
+            carbs: Math.round(n['carbohydrates_100g'] || 0),
+            fat: Math.round(n['fat_100g'] || 0),
+            servingSize: 100,
+            servingUnit: 'g',
+            source: 'off',
+            brand: p.brands || null,
+            thumb: p.image_small_url || null
+          };
+        });
+    }
+
+    // --- USDA fallback search ---
+    async function searchUSDA(query) {
+      const params = new URLSearchParams({
+        api_key: USDA_API_KEY,
+        query: query,
+        pageSize: 20,
+        dataType: 'Foundation,SR Legacy,Survey (FNDDS),Branded'
+      });
+      const res = await fetch(USDA_URL + '?' + params);
+      const data = await res.json();
+      if (!data.foods) return [];
+
+      return data.foods.filter(f => {
+        const nutrients = f.foodNutrients || [];
+        const hasCal = nutrients.some(n => n.nutrientId === 1008 || n.nutrientName === 'Energy');
+        return f.description && hasCal;
+      }).slice(0, 15).map(food => {
+        const nutrients = extractNutrients(food);
+        return {
+          name: food.description,
+          cal: nutrients.cal,
+          protein: nutrients.protein,
+          carbs: nutrients.carbs,
+          fat: nutrients.fat,
+          servingSize: food.servingSize || 100,
+          servingUnit: food.servingSizeUnit || 'g',
+          source: 'usda',
+          brand: food.brandName || null,
+          thumb: null
+        };
+      });
     }
 
     function extractNutrients(food) {
@@ -2521,6 +2740,50 @@
         carbs: get(1005),
         fat: get(1004)
       };
+    }
+
+    // --- Recent Foods ---
+    function addToRecent(food) {
+      if (!state.recentFoods) state.recentFoods = [];
+      // Remove duplicate if exists
+      state.recentFoods = state.recentFoods.filter(f => f.name !== food.name);
+      // Add to front
+      state.recentFoods.unshift({
+        name: food.name,
+        cal: food.cal,
+        protein: food.protein,
+        carbs: food.carbs,
+        fat: food.fat,
+        servingSize: food.servingSize,
+        servingUnit: food.servingUnit
+      });
+      // Keep max 15
+      if (state.recentFoods.length > 15) state.recentFoods = state.recentFoods.slice(0, 15);
+      saveState();
+      renderRecent();
+    }
+
+    function renderRecent() {
+      const section = document.getElementById('recent-section');
+      const container = document.getElementById('recent-chips');
+      if (!state.recentFoods || state.recentFoods.length === 0) {
+        section.style.display = 'none';
+        return;
+      }
+      section.style.display = 'block';
+      container.innerHTML = state.recentFoods.map((food, i) => `
+        <div class="recent-chip" data-idx="${i}">
+          ${food.name}<span class="chip-cal">${food.cal} cal</span>
+        </div>
+      `).join('');
+
+      container.querySelectorAll('.recent-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          const idx = parseInt(chip.dataset.idx);
+          selectedFood = { ...state.recentFoods[idx] };
+          openServingModal();
+        });
+      });
     }
 
     // --- Serving Modal ---
@@ -2596,6 +2859,7 @@
         category: selectedCategory || autoCategory()
       };
       getTodayLog().push(entry);
+      addToRecent(selectedFood);
       saveState();
       renderTodayLog();
       updateMacroSummary();
@@ -2968,13 +3232,30 @@
       setTimeout(() => msg.style.display = 'none', 2000);
     });
 
+    // --- API Keys Save/Load ---
+    function loadApiKeys() {
+      document.getElementById('cn-api-key').value = getCNKey();
+    }
+
+    document.getElementById('save-api-keys').addEventListener('click', () => {
+      const cnKey = document.getElementById('cn-api-key').value.trim();
+      localStorage.setItem(API_KEYS_STORAGE, JSON.stringify({ cnKey }));
+      updateApiBanner();
+      const msg = document.getElementById('save-api-msg');
+      msg.style.display = 'block';
+      setTimeout(() => msg.style.display = 'none', 2000);
+    });
+
     // --- Init ---
     updateMacroSummary();
     renderTodayLog();
     renderSuggestions();
     renderFavorites();
+    renderRecent();
     updateWaterDisplay();
+    updateApiBanner();
     loadSettings();
+    loadApiKeys();
 
     if (!localStorage.getItem(STORAGE_KEY)) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
