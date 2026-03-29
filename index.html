@@ -225,6 +225,8 @@
     .macro-card.carbs .value { color: var(--clay); }
     .macro-card.fat { border-left: 4px solid #C4A265; }
     .macro-card.fat .value { color: #C4A265; }
+    .macro-card.fiber { border-left: 4px solid #26A69A; }
+    .macro-card.fiber .value { color: #26A69A; }
 
     /* Consumed + Pie Charts */
     .consumed-section {
@@ -252,7 +254,7 @@
     }
     .consumed-stats {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
       gap: 8px;
       margin-bottom: 16px;
     }
@@ -1584,6 +1586,10 @@
             <div class="value" id="fat-remaining">--</div>
             <div class="label">Fat</div>
           </div>
+          <div class="macro-card fiber" id="fiber-card">
+            <div class="value" id="fiber-remaining">--</div>
+            <div class="label">Fiber</div>
+          </div>
         </div>
         <div class="water-row">
           <div class="water-label">
@@ -1625,6 +1631,11 @@
             <div class="stat-target" id="target-fat-display">/ 65g</div>
             <div class="stat-label">Fat</div>
           </div>
+          <div class="consumed-stat">
+            <div class="stat-val" id="consumed-fiber" style="color:#26A69A">0</div>
+            <div class="stat-target" id="target-fiber-display">/ 25g</div>
+            <div class="stat-label">Fiber</div>
+          </div>
         </div>
         <div class="pie-row">
           <div class="pie-wrapper">
@@ -1650,6 +1661,12 @@
               <div class="pie-center" id="pie-fat-pct">0%</div>
             </div>
             <div class="pie-label">Fat</div>
+          </div>
+          <div class="pie-wrapper">
+            <div class="pie" id="pie-fiber">
+              <div class="pie-center" id="pie-fiber-pct">0%</div>
+            </div>
+            <div class="pie-label">Fiber</div>
           </div>
         </div>
       </div>
@@ -1719,6 +1736,9 @@
           <div class="form-row">
             <input type="number" id="custom-carbs" placeholder="Carbs (g)">
             <input type="number" id="custom-fat" placeholder="Fat (g)">
+          </div>
+          <div class="form-row">
+            <input type="number" id="custom-fiber" placeholder="Fiber (g)">
           </div>
           <div style="margin-top:10px">
             <button class="btn btn-primary" style="width:100%;padding:10px" id="custom-meal-add">Add Custom Food</button>
@@ -1816,6 +1836,10 @@
         <input type="number" id="target-fat" placeholder="e.g. 65">
       </div>
       <div class="form-group">
+        <label>Fiber (g)</label>
+        <input type="number" id="target-fiber" placeholder="e.g. 25">
+      </div>
+      <div class="form-group">
         <label>Water (glasses/day)</label>
         <input type="number" id="target-water" placeholder="e.g. 8">
       </div>
@@ -1874,6 +1898,7 @@
         <div><strong>Protein:</strong> <span id="preview-protein">0</span>g</div>
         <div><strong>Carbs:</strong> <span id="preview-carbs">0</span>g</div>
         <div><strong>Fat:</strong> <span id="preview-fat">0</span>g</div>
+        <div><strong>Fiber:</strong> <span id="preview-fiber">0</span>g</div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
@@ -2017,7 +2042,7 @@
 
     function defaultState() {
       return {
-        targets: { cal: 2000, protein: 150, carbs: 200, fat: 65, water: 8, weight: null },
+        targets: { cal: 2000, protein: 150, carbs: 200, fat: 65, fiber: 25, water: 8, weight: null },
         days: {},
         water: {},
         weight: {},
@@ -2031,6 +2056,7 @@
       if (!parsed.targets) parsed.targets = def.targets;
       if (!parsed.days) parsed.days = {};
       if (parsed.targets.water == null) parsed.targets.water = 8;
+      if (parsed.targets.fiber == null) parsed.targets.fiber = 25;
       if (parsed.targets.weight === undefined) parsed.targets.weight = null;
       if (!parsed.water) parsed.water = {};
       if (!parsed.weight) parsed.weight = {};
@@ -2108,24 +2134,27 @@
       cal: 'var(--court-green)',
       protein: 'var(--sage)',
       carbs: 'var(--clay)',
-      fat: '#C4A265'
+      fat: '#C4A265',
+      fiber: '#26A69A'
     };
 
     function updateMacroSummary() {
       const log = getTodayLog();
-      const totals = { cal: 0, protein: 0, carbs: 0, fat: 0 };
+      const totals = { cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
       log.forEach(entry => {
         totals.cal += entry.cal;
         totals.protein += entry.protein;
         totals.carbs += entry.carbs;
         totals.fat += entry.fat;
+        totals.fiber += entry.fiber || 0;
       });
 
       const remaining = {
         cal: Math.round(state.targets.cal - totals.cal),
         protein: Math.round(state.targets.protein - totals.protein),
         carbs: Math.round(state.targets.carbs - totals.carbs),
-        fat: Math.round(state.targets.fat - totals.fat)
+        fat: Math.round(state.targets.fat - totals.fat),
+        fiber: Math.round(state.targets.fiber - totals.fiber)
       };
 
       // Remaining cards
@@ -2133,8 +2162,9 @@
       document.getElementById('protein-remaining').textContent = remaining.protein;
       document.getElementById('carbs-remaining').textContent = remaining.carbs;
       document.getElementById('fat-remaining').textContent = remaining.fat;
+      document.getElementById('fiber-remaining').textContent = remaining.fiber;
 
-      ['cal', 'protein', 'carbs', 'fat'].forEach(macro => {
+      ['cal', 'protein', 'carbs', 'fat', 'fiber'].forEach(macro => {
         const card = document.getElementById(macro + '-card');
         card.classList.toggle('over', remaining[macro] < 0);
       });
@@ -2144,15 +2174,17 @@
       document.getElementById('consumed-protein').textContent = Math.round(totals.protein);
       document.getElementById('consumed-carbs').textContent = Math.round(totals.carbs);
       document.getElementById('consumed-fat').textContent = Math.round(totals.fat);
+      document.getElementById('consumed-fiber').textContent = Math.round(totals.fiber);
 
       // Target displays
       document.getElementById('target-cal-display').textContent = '/ ' + state.targets.cal;
       document.getElementById('target-protein-display').textContent = '/ ' + state.targets.protein + 'g';
       document.getElementById('target-carbs-display').textContent = '/ ' + state.targets.carbs + 'g';
       document.getElementById('target-fat-display').textContent = '/ ' + state.targets.fat + 'g';
+      document.getElementById('target-fiber-display').textContent = '/ ' + state.targets.fiber + 'g';
 
       // Pie charts
-      ['cal', 'protein', 'carbs', 'fat'].forEach(macro => {
+      ['cal', 'protein', 'carbs', 'fat', 'fiber'].forEach(macro => {
         const pct = state.targets[macro] > 0
           ? Math.min(Math.round((totals[macro] / state.targets[macro]) * 100), 100)
           : 0;
@@ -2208,6 +2240,7 @@
           protein: Math.round(entry.protein / entry.servings),
           carbs: Math.round(entry.carbs / entry.servings),
           fat: Math.round(entry.fat / entry.servings),
+          fiber: Math.round((entry.fiber || 0) / entry.servings),
           servingSize: entry.servingSize || 100,
           servingUnit: entry.servingUnit || 'g'
         });
@@ -2252,6 +2285,7 @@
             protein: fav.protein,
             carbs: fav.carbs,
             fat: fav.fat,
+            fiber: fav.fiber || 0,
             servingSize: fav.servingSize,
             servingUnit: fav.servingUnit
           };
@@ -2272,6 +2306,7 @@
       const protein = parseInt(document.getElementById('custom-protein').value) || 0;
       const carbs = parseInt(document.getElementById('custom-carbs').value) || 0;
       const fat = parseInt(document.getElementById('custom-fat').value) || 0;
+      const fiber = parseInt(document.getElementById('custom-fiber').value) || 0;
 
       if (!name) {
         alert('Please enter a food name.');
@@ -2284,6 +2319,7 @@
         protein: protein,
         carbs: carbs,
         fat: fat,
+        fiber: fiber,
         servingSize: 1,
         servingUnit: 'serving'
       };
@@ -2294,6 +2330,7 @@
       document.getElementById('custom-protein').value = '';
       document.getElementById('custom-carbs').value = '';
       document.getElementById('custom-fat').value = '';
+      document.getElementById('custom-fiber').value = '';
       document.getElementById('custom-meal-form').classList.remove('active');
 
       openServingModal();
@@ -2615,6 +2652,7 @@
           protein: food.protein,
           carbs: food.carbs,
           fat: food.fat,
+          fiber: food.fiber,
           servingSize: food.servingSize,
           servingUnit: food.servingUnit
         }).replace(/'/g, "&#39;");
@@ -2626,7 +2664,7 @@
               <div class="food-name">${food.name}<span class="food-source ${sourceClass}">${sourceLabel}</span></div>
               ${brandHtml}
               <div class="food-macros">
-                ${food.cal} cal | ${food.protein}g P | ${food.carbs}g C | ${food.fat}g F (per ${food.servingSize}${food.servingUnit})
+                ${food.cal} cal | ${food.protein}g P | ${food.carbs}g C | ${food.fat}g F | ${food.fiber}g Fiber (per ${food.servingSize}${food.servingUnit})
               </div>
             </div>
           </div>
@@ -2655,6 +2693,7 @@
         protein: Math.round(item.protein_g || 0),
         carbs: Math.round(item.carbohydrates_total_g || 0),
         fat: Math.round(item.fat_total_g || 0),
+        fiber: Math.round(item.fiber_g || 0),
         servingSize: Math.round(item.serving_size_g || 100),
         servingUnit: 'g',
         source: 'cn',
@@ -2686,6 +2725,7 @@
             protein: Math.round(n['proteins_100g'] || 0),
             carbs: Math.round(n['carbohydrates_100g'] || 0),
             fat: Math.round(n['fat_100g'] || 0),
+            fiber: Math.round(n['fiber_100g'] || 0),
             servingSize: 100,
             servingUnit: 'g',
             source: 'off',
@@ -2719,6 +2759,7 @@
           protein: nutrients.protein,
           carbs: nutrients.carbs,
           fat: nutrients.fat,
+          fiber: nutrients.fiber,
           servingSize: food.servingSize || 100,
           servingUnit: food.servingSizeUnit || 'g',
           source: 'usda',
@@ -2738,7 +2779,8 @@
         cal: get(1008),
         protein: get(1003),
         carbs: get(1005),
-        fat: get(1004)
+        fat: get(1004),
+        fiber: get(1079)
       };
     }
 
@@ -2754,6 +2796,7 @@
         protein: food.protein,
         carbs: food.carbs,
         fat: food.fat,
+        fiber: food.fiber || 0,
         servingSize: food.servingSize,
         servingUnit: food.servingUnit
       });
@@ -2790,7 +2833,7 @@
     function openServingModal() {
       document.getElementById('modal-food-name').textContent = selectedFood.name;
       document.getElementById('modal-per-serving').textContent =
-        `Per serving (${selectedFood.servingSize}${selectedFood.servingUnit}): ${selectedFood.cal} cal | ${selectedFood.protein}g P | ${selectedFood.carbs}g C | ${selectedFood.fat}g F`;
+        `Per serving (${selectedFood.servingSize}${selectedFood.servingUnit}): ${selectedFood.cal} cal | ${selectedFood.protein}g P | ${selectedFood.carbs}g C | ${selectedFood.fat}g F | ${selectedFood.fiber || 0}g Fiber`;
       document.getElementById('serving-count').value = 1;
 
       // Auto-select category
@@ -2815,6 +2858,7 @@
       document.getElementById('preview-protein').textContent = Math.round(selectedFood.protein * servings);
       document.getElementById('preview-carbs').textContent = Math.round(selectedFood.carbs * servings);
       document.getElementById('preview-fat').textContent = Math.round(selectedFood.fat * servings);
+      document.getElementById('preview-fiber').textContent = Math.round((selectedFood.fiber || 0) * servings);
     }
 
     document.getElementById('serving-count').addEventListener('input', updatePreview);
@@ -2855,6 +2899,7 @@
         protein: Math.round(selectedFood.protein * servings),
         carbs: Math.round(selectedFood.carbs * servings),
         fat: Math.round(selectedFood.fat * servings),
+        fiber: Math.round((selectedFood.fiber || 0) * servings),
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         category: selectedCategory || autoCategory()
       };
@@ -2904,7 +2949,7 @@
               <div class="log-item-info">
                 <div class="log-item-name">${entry.name}</div>
                 <div class="log-item-macros">
-                  ${entry.servings} serving${entry.servings !== 1 ? 's' : ''} | ${entry.cal} cal | ${entry.protein}g P | ${entry.carbs}g C | ${entry.fat}g F
+                  ${entry.servings} serving${entry.servings !== 1 ? 's' : ''} | ${entry.cal} cal | ${entry.protein}g P | ${entry.carbs}g C | ${entry.fat}g F | ${entry.fiber || 0}g Fiber
                 </div>
               </div>
               <div class="log-item-actions">
@@ -2953,12 +2998,13 @@
 
       container.innerHTML = pastDays.map(day => {
         const log = state.days[day];
-        const totals = { cal: 0, protein: 0, carbs: 0, fat: 0 };
+        const totals = { cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
         log.forEach(entry => {
           totals.cal += entry.cal;
           totals.protein += entry.protein;
           totals.carbs += entry.carbs;
           totals.fat += entry.fat;
+          totals.fiber += entry.fiber || 0;
         });
 
         const overUnder = totals.cal <= state.targets.cal ? 'under' : 'over';
@@ -2981,7 +3027,7 @@
               <div>
                 <div class="history-day-date">${dateStr}</div>
                 <div class="history-day-status ${overUnder}">${statusText}</div>
-                <div class="history-macros-summary">${totals.cal} cal | ${Math.round(totals.protein)}g P | ${Math.round(totals.carbs)}g C | ${Math.round(totals.fat)}g F</div>
+                <div class="history-macros-summary">${totals.cal} cal | ${Math.round(totals.protein)}g P | ${Math.round(totals.carbs)}g C | ${Math.round(totals.fat)}g F | ${Math.round(totals.fiber)}g Fiber</div>
               </div>
               <div class="history-day-cal">${totals.cal} cal</div>
             </div>
@@ -3024,12 +3070,13 @@
     function getDayTotals(dateKey) {
       const log = state.days[dateKey];
       if (!log || log.length === 0) return null;
-      const totals = { cal: 0, protein: 0, carbs: 0, fat: 0, meals: log.length };
+      const totals = { cal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, meals: log.length };
       log.forEach(e => {
         totals.cal += e.cal;
         totals.protein += e.protein;
         totals.carbs += e.carbs;
         totals.fat += e.fat;
+        totals.fiber += e.fiber || 0;
       });
       return totals;
     }
@@ -3183,14 +3230,14 @@
 
     // --- Export Data ---
     document.getElementById('export-btn').addEventListener('click', () => {
-      let csv = 'Date,Meal,Category,Calories,Protein,Carbs,Fat,Servings\n';
+      let csv = 'Date,Meal,Category,Calories,Protein,Carbs,Fat,Fiber,Servings\n';
       const days = Object.keys(state.days).sort();
       days.forEach(day => {
         const log = state.days[day];
         log.forEach(entry => {
           const name = '"' + (entry.name || '').replace(/"/g, '""') + '"';
           const cat = entry.category || 'snack';
-          csv += `${day},${name},${cat},${entry.cal},${entry.protein},${entry.carbs},${entry.fat},${entry.servings}\n`;
+          csv += `${day},${name},${cat},${entry.cal},${entry.protein},${entry.carbs},${entry.fat},${entry.fiber || 0},${entry.servings}\n`;
         });
       });
 
@@ -3211,6 +3258,7 @@
       document.getElementById('target-protein').value = state.targets.protein;
       document.getElementById('target-carbs').value = state.targets.carbs;
       document.getElementById('target-fat').value = state.targets.fat;
+      document.getElementById('target-fiber').value = state.targets.fiber;
       document.getElementById('target-water').value = state.targets.water;
       document.getElementById('target-weight').value = state.targets.weight || '';
     }
@@ -3220,6 +3268,7 @@
       state.targets.protein = parseInt(document.getElementById('target-protein').value) || 150;
       state.targets.carbs = parseInt(document.getElementById('target-carbs').value) || 200;
       state.targets.fat = parseInt(document.getElementById('target-fat').value) || 65;
+      state.targets.fiber = parseInt(document.getElementById('target-fiber').value) || 25;
       state.targets.water = parseInt(document.getElementById('target-water').value) || 8;
       const weightVal = parseFloat(document.getElementById('target-weight').value);
       state.targets.weight = weightVal > 0 ? weightVal : null;
