@@ -560,6 +560,80 @@
       margin-left: 4px;
     }
 
+    /* Photo scan buttons */
+    .photo-scan-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .photo-scan-btn {
+      flex: 1;
+      padding: 12px 10px;
+      border: 2px dashed var(--net-line);
+      border-radius: 12px;
+      background: var(--cream);
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      font-family: 'Montserrat', sans-serif;
+      color: var(--dark);
+      transition: all 0.15s;
+    }
+    .photo-scan-btn:hover {
+      border-color: var(--court-green);
+      background: #f0fad0;
+    }
+    .photo-scan-btn .btn-icon {
+      font-size: 20px;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .photo-scan-preview {
+      position: relative;
+      margin-bottom: 10px;
+      border-radius: 12px;
+      overflow: hidden;
+      display: none;
+    }
+    .photo-scan-preview img {
+      width: 100%;
+      max-height: 200px;
+      object-fit: cover;
+      border-radius: 12px;
+    }
+    .photo-scan-preview .photo-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .photo-scan-preview .photo-close {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+    .source-ai { background: #F3E5F5; color: #7B1FA2; }
+
     /* API setup banner */
     .api-setup-banner {
       background: #FFF8E1;
@@ -1756,6 +1830,23 @@
           <div class="recent-chips" id="recent-chips"></div>
         </div>
 
+        <!-- Photo scan -->
+        <div class="photo-scan-row">
+          <button class="photo-scan-btn" id="photo-camera-btn">
+            <span class="btn-icon">&#128247;</span>Take Photo
+          </button>
+          <button class="photo-scan-btn" id="photo-gallery-btn">
+            <span class="btn-icon">&#128444;&#65039;</span>Choose Photo
+          </button>
+          <input type="file" id="photo-camera-input" accept="image/*" capture="environment" style="display:none">
+          <input type="file" id="photo-gallery-input" accept="image/*" style="display:none">
+        </div>
+        <div class="photo-scan-preview" id="photo-preview">
+          <button class="photo-close" id="photo-close">&times;</button>
+          <img id="photo-preview-img" src="" alt="Food photo">
+          <div class="photo-overlay" id="photo-overlay">Analyzing food...</div>
+        </div>
+
         <input type="text" class="search-input" id="food-search" placeholder="Search for a food (e.g. '2 eggs and toast')..." autocomplete="off">
         <div class="search-results" id="search-results">
           <div class="search-hint">Type a food name to search</div>
@@ -1864,6 +1955,21 @@
       </div>
       <button class="btn btn-primary" style="width:100%" id="save-api-keys">Save API Key</button>
       <div class="save-msg" id="save-api-msg">API key saved!</div>
+    </div>
+
+    <!-- Gemini Vision API -->
+    <div class="settings-form">
+      <h2>Photo Scanner (Gemini Vision)</h2>
+      <p style="font-size:12px;color:var(--gray);margin-bottom:14px;line-height:1.5;font-weight:500;">
+        Snap a photo of your meal and AI will identify foods and estimate nutrition.
+        Get a free API key at <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#2B5EA7;font-weight:700;">Google AI Studio</a> (free tier is generous — plenty for personal use).
+      </p>
+      <div class="form-group">
+        <label>Gemini API Key</label>
+        <input type="text" id="gemini-api-key" placeholder="e.g. AIzaSy...">
+      </div>
+      <button class="btn btn-primary" style="width:100%" id="save-gemini-key">Save Gemini Key</button>
+      <div class="save-msg" id="save-gemini-msg">Gemini key saved!</div>
     </div>
 
     <!-- Export Data -->
@@ -2643,8 +2749,10 @@
         const thumbStyle = food.thumb
           ? `background-image:url('${food.thumb}');background-size:cover;width:36px;height:36px;border-radius:8px;flex-shrink:0;`
           : '';
-        const sourceClass = food.source === 'cn' ? 'source-cn' : food.source === 'off' ? 'source-off' : 'source-usda';
-        const sourceLabel = food.source === 'cn' ? 'CalorieNinjas' : food.source === 'off' ? 'Open Food Facts' : 'USDA';
+        const sourceMap = { cn: 'source-cn', off: 'source-off', usda: 'source-usda', ai: 'source-ai' };
+        const labelMap = { cn: 'CalorieNinjas', off: 'Open Food Facts', usda: 'USDA', ai: 'AI Photo' };
+        const sourceClass = sourceMap[food.source] || 'source-usda';
+        const sourceLabel = labelMap[food.source] || 'USDA';
         const brandHtml = food.brand ? `<div class="food-brand">${food.brand}</div>` : '';
         const foodData = JSON.stringify({
           name: food.name + (food.brand ? ' (' + food.brand + ')' : ''),
@@ -3295,6 +3403,158 @@
       setTimeout(() => msg.style.display = 'none', 2000);
     });
 
+    // --- Gemini Vision Key ---
+    const GEMINI_KEY_STORAGE = 'mealTrackerGeminiKey';
+
+    function getGeminiKey() {
+      return localStorage.getItem(GEMINI_KEY_STORAGE) || '';
+    }
+
+    function hasGeminiKey() {
+      return !!getGeminiKey();
+    }
+
+    function loadGeminiKey() {
+      document.getElementById('gemini-api-key').value = getGeminiKey();
+    }
+
+    document.getElementById('save-gemini-key').addEventListener('click', () => {
+      const key = document.getElementById('gemini-api-key').value.trim();
+      localStorage.setItem(GEMINI_KEY_STORAGE, key);
+      const msg = document.getElementById('save-gemini-msg');
+      msg.style.display = 'block';
+      setTimeout(() => msg.style.display = 'none', 2000);
+    });
+
+    // --- Photo Scan ---
+    document.getElementById('photo-camera-btn').addEventListener('click', () => {
+      if (!hasGeminiKey()) {
+        alert('Please add your Gemini API key in Settings first. Get one free at aistudio.google.com/apikey');
+        return;
+      }
+      document.getElementById('photo-camera-input').click();
+    });
+
+    document.getElementById('photo-gallery-btn').addEventListener('click', () => {
+      if (!hasGeminiKey()) {
+        alert('Please add your Gemini API key in Settings first. Get one free at aistudio.google.com/apikey');
+        return;
+      }
+      document.getElementById('photo-gallery-input').click();
+    });
+
+    document.getElementById('photo-camera-input').addEventListener('change', handlePhotoSelect);
+    document.getElementById('photo-gallery-input').addEventListener('change', handlePhotoSelect);
+
+    document.getElementById('photo-close').addEventListener('click', () => {
+      document.getElementById('photo-preview').style.display = 'none';
+      document.getElementById('photo-camera-input').value = '';
+      document.getElementById('photo-gallery-input').value = '';
+    });
+
+    function handlePhotoSelect(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const base64Full = ev.target.result;
+        const base64Data = base64Full.split(',')[1];
+        const mimeType = file.type || 'image/jpeg';
+
+        // Show preview
+        const preview = document.getElementById('photo-preview');
+        document.getElementById('photo-preview-img').src = base64Full;
+        document.getElementById('photo-overlay').textContent = 'Analyzing food...';
+        document.getElementById('photo-overlay').style.display = 'flex';
+        preview.style.display = 'block';
+
+        try {
+          const foods = await analyzeWithGemini(base64Data, mimeType);
+          document.getElementById('photo-overlay').style.display = 'none';
+
+          if (foods.length === 0) {
+            document.getElementById('search-results').innerHTML =
+              '<div class="search-hint">Could not identify any food in this photo. Try a clearer image.</div>';
+            return;
+          }
+
+          renderSearchResults(foods);
+        } catch(err) {
+          document.getElementById('photo-overlay').textContent = 'Analysis failed';
+          document.getElementById('search-results').innerHTML =
+            '<div class="search-hint">Failed to analyze photo. Check your Gemini API key in Settings.</div>';
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function analyzeWithGemini(base64Data, mimeType) {
+      const apiKey = getGeminiKey();
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+      const prompt = `Analyze this food photo. Identify each distinct food item visible and estimate its nutrition per typical serving shown.
+
+Return ONLY a JSON array (no markdown, no explanation) with this format:
+[
+  {
+    "name": "Food name",
+    "cal": 250,
+    "protein": 20,
+    "carbs": 30,
+    "fat": 8,
+    "fiber": 3,
+    "servingSize": 150,
+    "servingUnit": "g"
+  }
+]
+
+Rules:
+- Estimate realistic portion sizes based on what's visible in the photo
+- Round all numbers to whole integers
+- If you see multiple items (e.g. rice + chicken + vegetables), list each separately
+- Use grams for servingSize
+- If unsure about a food, give your best estimate
+- Return an empty array [] if no food is visible`;
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: mimeType, data: base64Data } }
+            ]
+          }]
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error?.message || 'API error');
+
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      // Extract JSON from response (handle potential markdown wrapping)
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) return [];
+
+      const items = JSON.parse(jsonMatch[0]);
+      return items.map(item => ({
+        name: item.name || 'Unknown food',
+        cal: Math.round(item.cal || 0),
+        protein: Math.round(item.protein || 0),
+        carbs: Math.round(item.carbs || 0),
+        fat: Math.round(item.fat || 0),
+        fiber: Math.round(item.fiber || 0),
+        servingSize: Math.round(item.servingSize || 100),
+        servingUnit: item.servingUnit || 'g',
+        source: 'ai',
+        brand: null,
+        thumb: null
+      }));
+    }
+
     // --- Init ---
     updateMacroSummary();
     renderTodayLog();
@@ -3305,6 +3565,7 @@
     updateApiBanner();
     loadSettings();
     loadApiKeys();
+    loadGeminiKey();
 
     if (!localStorage.getItem(STORAGE_KEY)) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
