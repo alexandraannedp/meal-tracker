@@ -3452,41 +3452,59 @@
       document.getElementById('photo-gallery-input').value = '';
     });
 
-    function handlePhotoSelect(e) {
+    function resizeImage(file, maxWidth = 1024) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let w = img.width, h = img.height;
+          if (w > maxWidth) {
+            h = Math.round(h * maxWidth / w);
+            w = maxWidth;
+          }
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          resolve(dataUrl);
+        };
+        img.src = URL.createObjectURL(file);
+      });
+    }
+
+    async function handlePhotoSelect(e) {
       const file = e.target.files[0];
       if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        const base64Full = ev.target.result;
-        const base64Data = base64Full.split(',')[1];
-        const mimeType = file.type || 'image/jpeg';
+      // Resize to avoid sending huge images
+      const base64Full = await resizeImage(file);
+      const base64Data = base64Full.split(',')[1];
+      const mimeType = 'image/jpeg';
 
-        // Show preview
-        const preview = document.getElementById('photo-preview');
-        document.getElementById('photo-preview-img').src = base64Full;
-        document.getElementById('photo-overlay').textContent = 'Analyzing food...';
-        document.getElementById('photo-overlay').style.display = 'flex';
-        preview.style.display = 'block';
+      // Show preview
+      const preview = document.getElementById('photo-preview');
+      document.getElementById('photo-preview-img').src = base64Full;
+      document.getElementById('photo-overlay').textContent = 'Analyzing food...';
+      document.getElementById('photo-overlay').style.display = 'flex';
+      preview.style.display = 'block';
 
-        try {
-          const foods = await analyzeWithGemini(base64Data, mimeType);
-          document.getElementById('photo-overlay').style.display = 'none';
+      try {
+        const foods = await analyzeWithGemini(base64Data, mimeType);
+        document.getElementById('photo-overlay').style.display = 'none';
 
-          if (foods.length === 0) {
-            document.getElementById('search-results').innerHTML =
-              '<div class="search-hint">Could not identify any food in this photo. Try a clearer image.</div>';
-            return;
-          }
-
-          renderSearchResults(foods);
-        } catch(err) {
-          document.getElementById('photo-overlay').textContent = 'Analysis failed';
+        if (foods.length === 0) {
           document.getElementById('search-results').innerHTML =
-            '<div class="search-hint">Failed to analyze photo. Check your Gemini API key in Settings.</div>';
+            '<div class="search-hint">Could not identify any food in this photo. Try a clearer image.</div>';
+          return;
         }
-      };
-      reader.readAsDataURL(file);
+
+        renderSearchResults(foods);
+      } catch(err) {
+        console.error('Gemini analysis error:', err);
+        document.getElementById('photo-overlay').textContent = 'Analysis failed';
+        document.getElementById('search-results').innerHTML =
+          `<div class="search-hint">Failed to analyze photo: ${err.message}</div>`;
+      }
     }
 
     async function analyzeWithGemini(base64Data, mimeType) {
