@@ -3507,9 +3507,29 @@
       }
     }
 
+    async function findGeminiModel(apiKey) {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      const data = await res.json();
+      if (!data.models) throw new Error('Could not list models. Check your API key.');
+      // Find a flash model that supports generateContent
+      const model = data.models.find(m =>
+        m.name.includes('flash') &&
+        m.supportedGenerationMethods?.includes('generateContent')
+      );
+      if (!model) throw new Error('No compatible Gemini model found.');
+      return model.name;
+    }
+
+    let cachedModelName = null;
+
     async function analyzeWithGemini(base64Data, mimeType) {
       const apiKey = getGeminiKey();
-      const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+      // Auto-discover model on first use
+      if (!cachedModelName) {
+        cachedModelName = await findGeminiModel(apiKey);
+      }
+      const url = `https://generativelanguage.googleapis.com/v1beta/${cachedModelName}:generateContent?key=${apiKey}`;
 
       const prompt = `Analyze this food photo. Identify each distinct food item visible and estimate its nutrition per typical serving shown.
 
