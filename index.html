@@ -1993,10 +1993,10 @@
         <button class="category-btn" data-cat="snack">&#127871; Snack</button>
       </div>
 
-      <label>Servings</label>
+      <label id="amount-label">Amount (g)</label>
       <div class="serving-row">
         <button class="serving-btn" id="serving-minus">-</button>
-        <input type="number" class="serving-input" id="serving-count" value="1" min="0.25" step="0.25">
+        <input type="number" class="serving-input" id="serving-count" value="100" min="1" step="10">
         <button class="serving-btn" id="serving-plus">+</button>
       </div>
       <div class="modal-preview" id="modal-preview">
@@ -2941,8 +2941,8 @@
     function openServingModal() {
       document.getElementById('modal-food-name').textContent = selectedFood.name;
       document.getElementById('modal-per-serving').textContent =
-        `Per serving (${selectedFood.servingSize}${selectedFood.servingUnit}): ${selectedFood.cal} cal | ${selectedFood.protein}g P | ${selectedFood.carbs}g C | ${selectedFood.fat}g F | ${selectedFood.fiber || 0}g Fiber`;
-      document.getElementById('serving-count').value = 1;
+        `Per ${selectedFood.servingSize}${selectedFood.servingUnit}: ${selectedFood.cal} cal | ${selectedFood.protein}g P | ${selectedFood.carbs}g C | ${selectedFood.fat}g F | ${selectedFood.fiber || 0}g Fiber`;
+      document.getElementById('serving-count').value = selectedFood.servingSize;
 
       // Auto-select category
       selectedCategory = autoCategory();
@@ -2961,24 +2961,25 @@
     }
 
     function updatePreview() {
-      const servings = parseFloat(document.getElementById('serving-count').value) || 0;
-      document.getElementById('preview-cal').textContent = Math.round(selectedFood.cal * servings);
-      document.getElementById('preview-protein').textContent = Math.round(selectedFood.protein * servings);
-      document.getElementById('preview-carbs').textContent = Math.round(selectedFood.carbs * servings);
-      document.getElementById('preview-fat').textContent = Math.round(selectedFood.fat * servings);
-      document.getElementById('preview-fiber').textContent = Math.round((selectedFood.fiber || 0) * servings);
+      const grams = parseFloat(document.getElementById('serving-count').value) || 0;
+      const ratio = grams / (selectedFood.servingSize || 100);
+      document.getElementById('preview-cal').textContent = Math.round(selectedFood.cal * ratio);
+      document.getElementById('preview-protein').textContent = Math.round(selectedFood.protein * ratio);
+      document.getElementById('preview-carbs').textContent = Math.round(selectedFood.carbs * ratio);
+      document.getElementById('preview-fat').textContent = Math.round(selectedFood.fat * ratio);
+      document.getElementById('preview-fiber').textContent = Math.round((selectedFood.fiber || 0) * ratio);
     }
 
     document.getElementById('serving-count').addEventListener('input', updatePreview);
     document.getElementById('serving-plus').addEventListener('click', () => {
       const input = document.getElementById('serving-count');
-      input.value = (parseFloat(input.value) || 0) + 0.25;
+      input.value = (parseFloat(input.value) || 0) + 10;
       updatePreview();
     });
     document.getElementById('serving-minus').addEventListener('click', () => {
       const input = document.getElementById('serving-count');
-      const val = (parseFloat(input.value) || 0) - 0.25;
-      input.value = val < 0.25 ? 0.25 : val;
+      const val = (parseFloat(input.value) || 0) - 10;
+      input.value = val < 1 ? 1 : val;
       updatePreview();
     });
 
@@ -2997,17 +2998,19 @@
     });
 
     document.getElementById('modal-add').addEventListener('click', () => {
-      const servings = parseFloat(document.getElementById('serving-count').value) || 1;
+      const grams = parseFloat(document.getElementById('serving-count').value) || 100;
+      const ratio = grams / (selectedFood.servingSize || 100);
       const entry = {
         name: selectedFood.name,
-        servings: servings,
+        grams: grams,
+        servings: ratio,
         servingSize: selectedFood.servingSize,
         servingUnit: selectedFood.servingUnit,
-        cal: Math.round(selectedFood.cal * servings),
-        protein: Math.round(selectedFood.protein * servings),
-        carbs: Math.round(selectedFood.carbs * servings),
-        fat: Math.round(selectedFood.fat * servings),
-        fiber: Math.round((selectedFood.fiber || 0) * servings),
+        cal: Math.round(selectedFood.cal * ratio),
+        protein: Math.round(selectedFood.protein * ratio),
+        carbs: Math.round(selectedFood.carbs * ratio),
+        fat: Math.round(selectedFood.fat * ratio),
+        fiber: Math.round((selectedFood.fiber || 0) * ratio),
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         category: selectedCategory || autoCategory()
       };
@@ -3057,7 +3060,7 @@
               <div class="log-item-info">
                 <div class="log-item-name">${entry.name}</div>
                 <div class="log-item-macros">
-                  ${entry.servings} serving${entry.servings !== 1 ? 's' : ''} | ${entry.cal} cal | ${entry.protein}g P | ${entry.carbs}g C | ${entry.fat}g F | ${entry.fiber || 0}g Fiber
+                  ${entry.grams || Math.round(entry.servings * (entry.servingSize || 100))}g | ${entry.cal} cal | ${entry.protein}g P | ${entry.carbs}g C | ${entry.fat}g F | ${entry.fiber || 0}g Fiber
                 </div>
               </div>
               <div class="log-item-actions">
@@ -3338,14 +3341,14 @@
 
     // --- Export Data ---
     document.getElementById('export-btn').addEventListener('click', () => {
-      let csv = 'Date,Meal,Category,Calories,Protein,Carbs,Fat,Fiber,Servings\n';
+      let csv = 'Date,Meal,Category,Calories,Protein,Carbs,Fat,Fiber,Grams\n';
       const days = Object.keys(state.days).sort();
       days.forEach(day => {
         const log = state.days[day];
         log.forEach(entry => {
           const name = '"' + (entry.name || '').replace(/"/g, '""') + '"';
           const cat = entry.category || 'snack';
-          csv += `${day},${name},${cat},${entry.cal},${entry.protein},${entry.carbs},${entry.fat},${entry.fiber || 0},${entry.servings}\n`;
+          csv += `${day},${name},${cat},${entry.cal},${entry.protein},${entry.carbs},${entry.fat},${entry.fiber || 0},${entry.grams || Math.round(entry.servings * (entry.servingSize || 100))}\n`;
         });
       });
 
